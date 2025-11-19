@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # Połączony serwer Apache z PHP 8.3
+  webserver:
+    image: php:8.3-apache
+    container_name: calendar-test
+    ports:
+      - "8089:80"
+    volumes:
+      - ./public:/var/www/html
+    networks:
+      - calendar_network_test
+
+  # Serwer Radicale CalDAV/CardDAV
+  radicale:
+    image: tomsquest/docker-radicale:latest
+    container_name: radicale-test
+    ports:
+      - "5232:5232"
+    volumes:
+      - ./radicale/config:/etc/radicale/config
+      - ./radicale/users:/etc/radicale/users
+      - ./radicale_data:/data
+    networks:
+      - calendar_network_test
+
+networks:
+  calendar_network_test:
+    driver: bridge

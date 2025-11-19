@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kalendarz CalDAV</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f0f2f5;
+        }
+        #calendar-container {
+            width: 80vw;
+            height: 80vh;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        #calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            background-color: #007bff;
+            color: white;
+            flex-shrink: 0;
+        }
+        #calendar-header button {
+            background: transparent;
+            border: 1px solid white;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        #month-year {
+            font-size: 24px;
+            font-weight: 500;
+            margin: 0;
+        }
+        #calendar-weekdays {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            background-color: #f8f9fa;
+            flex-shrink: 0;
+        }
+        #calendar-weekdays div {
+            text-align: center;
+            padding: 12px 0;
+            font-weight: 600;
+            color: #6c757d;
+        }
+        #calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            grid-auto-rows: minmax(0, 1fr);
+            gap: 1px;
+            background-color: #dee2e6;
+            height: 100%;
+            overflow-y: hidden;
+        }
+        .calendar-day {
+            background-color: white;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+            overflow-y: auto;
+        }
+        .calendar-day.other-month {
+            background-color: #f8f9fa;
+        }
+        .day-number {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            flex-shrink: 0;
+        }
+        .events-container {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex-grow: 1;
+        }
+        .event {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background-color: #17a2b8;
+            color: white;
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            cursor: pointer;
+        }
+        .event.all-day {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        .event-icon {
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+        .event-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        #modal-overlay.visible {
+            display: flex;
+        }
+        #event-modal {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        .form-group textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .modal-actions button {
+            padding: 10px 20px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+        }
+        #save-event { background-color: #007bff; color: white; }
+        #cancel-event { background-color: #6c757d; color: white; }
+        #delete-event { background-color: #dc3545; color: white; display: none; }
+        #interval-group { display: none; margin-top: 10px; }
+    </style>
+</head>
+<body>
+<div id="calendar-container">
+    <div id="calendar-header">
+        <button id="prev-month">&lt; Poprzedni</button>
+        <h2 id="month-year"></h2>
+        <button id="next-month">Następny &gt;</button>
+    </div>
+    <div id="calendar-weekdays">
+        <div>Pon</div> <div>Wto</div> <div>Śro</div> <div>Czw</div> <div>Pią</div> <div>Sob</div> <div>Nie</div>
+    </div>
+    <div id="calendar-grid"></div>
+</div>
+
+<div id="modal-overlay">
+    <div id="event-modal">
+        <h3 id="modal-title">Dodaj wydarzenie</h3>
+        <form id="event-form">
+            <input type="hidden" id="event-uid">
+            <input type="hidden" id="event-is-recurring">
+            <div class="form-group">
+                <label for="event-title">Tytuł</label>
+                <input type="text" id="event-title" required>
+            </div>
+            <div class="form-group">
+                <label for="event-description">Opis</label>
+                <textarea id="event-description"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="event-start">Początek</label>
+                <input type="datetime-local" id="event-start" required>
+            </div>
+            <div class="form-group">
+                <label for="event-end">Koniec</label>
+                <input type="datetime-local" id="event-end" required>
+            </div>
+            <div class="form-group">
+                <label for="event-recurrence">Powtarzaj</label>
+                <select id="event-recurrence">
+                    <option value="none">Nigdy</option>
+                    <option value="daily">Codziennie</option>
+                    <option value="weekly">Co tydzień</option>
+                    <option value="monthly">Co miesiąc</option>
+                    <option value="every_x_days">Co kilka dni</option>
+                </select>
+            </div>
+            <div class="form-group" id="interval-group">
+                <label for="event-interval">Co ile dni?</label>
+                <input type="number" id="event-interval" value="2" min="2">
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="delete-event">Usuń</button>
+                <button type="button" id="cancel-event">Anuluj</button>
+                <button type="submit" id="save-event">Zapisz</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- ELEMENTY DOM ---
+        const grid = document.getElementById('calendar-grid');
+        const monthYearDisplay = document.getElementById('month-year');
+        const prevMonthBtn = document.getElementById('prev-month');
+        const nextMonthBtn = document.getElementById('next-month');
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modalTitle = document.getElementById('modal-title');
+        const eventForm = document.getElementById('event-form');
+        const uidInput = document.getElementById('event-uid');
+        const isRecurringInput = document.getElementById('event-is-recurring');
+        const titleInput = document.getElementById('event-title');
+        const descriptionInput = document.getElementById('event-description');
+        const startInput = document.getElementById('event-start');
+        const endInput = document.getElementById('event-end');
+        const recurrenceSelect = document.getElementById('event-recurrence');
+        const intervalGroup = document.getElementById('interval-group');
+        const intervalInput = document.getElementById('event-interval');
+        const saveBtn = document.getElementById('save-event');
+        const deleteBtn = document.getElementById('delete-event');
+        const cancelBtn = document.getElementById('cancel-event');
+
+        // --- STAN APLIKACJI ---
+        let currentDate = new Date();
+        let allEvents = [];
+
+        // --- GŁÓWNA FUNKCJA RENDERUJĄCA ---
+        function renderCalendar() {
+            const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+            grid.innerHTML = '';
+            const month = date.getMonth();
+            const year = date.getFullYear();
+            monthYearDisplay.textContent = `${date.toLocaleString('pl-PL', { month: 'long' })} ${year}`;
+            const firstDayOfMonth = date.getDay();
+            const startDayIndex = (firstDayOfMonth === 0) ? 6 : firstDayOfMonth - 1;
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const daysInPrevMonth = new Date(year, month, 0).getDate();
+            for (let i = startDayIndex; i > 0; i--) grid.appendChild(createDayCell(daysInPrevMonth - i + 1, true));
+            for (let i = 1; i <= daysInMonth; i++) grid.appendChild(createDayCell(i, false, i));
+            const gridCellsCount = startDayIndex + daysInMonth;
+            const remainingCells = gridCellsCount > 35 ? 42 - gridCellsCount : 35 - gridCellsCount;
+            for (let i = 1; i <= remainingCells; i++) grid.appendChild(createDayCell(i, true));
+            fetchAndDisplayEvents(year, month + 1);
+        }
+
+        function createDayCell(dayNumber, isOtherMonth = false, dayData = null) {
+            const dayCell = document.createElement('div');
+            dayCell.className = 'calendar-day';
+            if (isOtherMonth) dayCell.classList.add('other-month');
+            if (dayData) dayCell.dataset.day = dayData;
+            dayCell.innerHTML = `<div class="day-number">${dayNumber}</div><div class="events-container"></div>`;
+            return dayCell;
+        }
+
+        async function fetchAndDisplayEvents(year, month) {
+            try {
+                const response = await fetch(`api_get_events.php?year=${year}&month=${month}`);
+                if (!response.ok) throw new Error('Błąd sieci');
+                const events = await response.json();
+                allEvents = events;
+
+                document.querySelectorAll('.event').forEach(el => el.remove());
+
+                events.forEach(event => {
+                    const startDate = new Date(event.start);
+                    const endDate = new Date(event.end);
+                    const timeOptions = { hour: '2-digit', minute: '2-digit' };
+
+                    let loopDate = new Date(startDate);
+                    const loopEndDate = event.isAllDay ? new Date(endDate.getTime() + 1) : endDate;
+
+                    while (loopDate < loopEndDate) {
+                        const currentDay = loopDate.getDate();
+                        const currentMonth = loopDate.getMonth();
+
+                        if (currentMonth === currentDate.getMonth()) {
+                            const dayCell = grid.querySelector(`.calendar-day[data-day="${currentDay}"]`);
+                            if (dayCell) {
+                                const eventEl = document.createElement('div');
+                                eventEl.className = 'event';
+                                if (event.isAllDay) eventEl.classList.add('all-day');
+                                eventEl.dataset.uid = event.uid;
+                                eventEl.dataset.start = event.start;
+
+                                const isFirstDay = loopDate.toDateString() === startDate.toDateString();
+                                const isLastDay = loopDate.toDateString() === endDate.toDateString();
+                                const isMultiDay = startDate.toDateString() !== endDate.toDateString();
+
+                                let displayText = event.summary;
+                                let eventIcon = '';
+
+                                if (event.isAllDay) {
+                                    displayText = event.summary;
+                                } else if (isMultiDay) {
+                                    if (isFirstDay) {
+                                        eventIcon = `<span class="event-icon" title="Początek wydarzenia">▶</span>`;
+                                        displayText = `${startDate.toLocaleTimeString('pl-PL', timeOptions)} ${event.summary}`;
+                                    } else if (isLastDay) {
+                                        eventIcon = `<span class="event-icon" title="Koniec wydarzenia">◀</span>`;
+                                        displayText = `${endDate.toLocaleTimeString('pl-PL', timeOptions)} ${event.summary}`;
+                                    } else {
+                                        eventIcon = `<span class="event-icon" title="Wydarzenie w toku">↔</span>`;
+                                    }
+                                } else {
+                                    displayText = `${startDate.toLocaleTimeString('pl-PL', timeOptions)} - ${endDate.toLocaleTimeString('pl-PL', timeOptions)} ${event.summary}`;
+                                }
+
+                                if (event.isRecurring && isFirstDay) {
+                                    eventIcon = `<span class="event-icon" title="Wydarzenie cykliczne">🔄</span>` + eventIcon;
+                                }
+
+                                eventEl.innerHTML = `${eventIcon}<span class="event-text">${displayText}</span>`;
+                                eventEl.title = `${new Date(event.start).toLocaleString()} - ${new Date(event.end).toLocaleString()} ${event.summary}`;
+
+                                dayCell.querySelector('.events-container').appendChild(eventEl);
+                            }
+                        }
+                        loopDate.setDate(loopDate.getDate() + 1);
+                    }
+                });
+            } catch (error) {
+                console.error('Nie udało się pobrać wydarzeń:', error);
+            }
+        }
+
+        // --- OBSŁUGA MODALA ---
+        function openModalForNew(day) {
+            modalTitle.textContent = 'Dodaj wydarzenie';
+            eventForm.reset();
+            uidInput.value = '';
+            isRecurringInput.value = 'false';
+            const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+            date.setHours(12, 0);
+            startInput.value = toLocalISOString(date);
+            date.setHours(date.getHours() + 1);
+            endInput.value = toLocalISOString(date);
+            deleteBtn.style.display = 'none';
+            intervalGroup.style.display = 'none';
+            modalOverlay.classList.add('visible');
+        }
+
+        function openModalForEdit(eventUid, eventStart) {
+            const event = allEvents.find(e => e.uid === eventUid && e.start === eventStart);
+            if (!event) return;
+
+            modalTitle.textContent = 'Edytuj wydarzenie';
+            eventForm.reset();
+            uidInput.value = event.uid;
+            isRecurringInput.value = event.isRecurring;
+            titleInput.value = event.summary;
+            descriptionInput.value = event.description;
+            startInput.value = toLocalISOString(new Date(event.start));
+            endInput.value = toLocalISOString(new Date(event.end));
+
+            const originalStartInput = document.createElement('input');
+            originalStartInput.type = 'hidden';
+            originalStartInput.id = 'event-original-start';
+            originalStartInput.value = event.start;
+            eventForm.prepend(originalStartInput);
+
+            let recurrenceValue = 'none';
+            intervalGroup.style.display = 'none';
+            if (event.rrule) {
+                if (event.rrule.includes('FREQ=WEEKLY')) { recurrenceValue = 'weekly'; }
+                else if (event.rrule.includes('FREQ=MONTHLY')) { recurrenceValue = 'monthly'; }
+                else if (event.rrule.includes('FREQ=DAILY')) {
+                    const intervalMatch = event.rrule.match(/INTERVAL=(\d+)/);
+                    if (intervalMatch && parseInt(intervalMatch[1], 10) > 1) {
+                        recurrenceValue = 'every_x_days';
+                        intervalInput.value = intervalMatch[1];
+                        intervalGroup.style.display = 'block';
+                    } else {
+                        recurrenceValue = 'daily';
+                    }
+                }
+            }
+            recurrenceSelect.value = recurrenceValue;
+            deleteBtn.style.display = 'inline-block';
+            modalOverlay.classList.add('visible');
+        }
+
+        function closeModal() {
+            const originalStartEl = document.getElementById('event-original-start');
+            if (originalStartEl) originalStartEl.remove();
+            modalOverlay.classList.remove('visible');
+        }
+
+        function toLocalISOString(date) {
+            const tzoffset = date.getTimezoneOffset() * 60000;
+            return (new Date(date - tzoffset)).toISOString().slice(0, 16);
+        }
+
+        grid.addEventListener('click', (e) => {
+            const eventEl = e.target.closest('.event');
+            if (eventEl) {
+                openModalForEdit(eventEl.dataset.uid, eventEl.dataset.start);
+                return;
+            }
+            const dayCell = e.target.closest('.calendar-day:not(.other-month)');
+            if (dayCell) {
+                openModalForNew(dayCell.dataset.day);
+            }
+        });
+
+        eventForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            saveBtn.disabled = true;
+            const originalStartEl = document.getElementById('event-original-start');
+            const eventData = {
+                uid: uidInput.value,
+                isRecurring: isRecurringInput.value === 'true',
+                title: titleInput.value,
+                description: descriptionInput.value,
+                start: startInput.value,
+                end: endInput.value,
+                recurrence: recurrenceSelect.value,
+                interval: intervalInput.value,
+                originalStart: originalStartEl ? originalStartEl.value : null
+            };
+
+            try {
+                const response = await fetch('api_add_event.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(eventData) });
+                const result = await response.json();
+                if (result.success) {
+                    closeModal();
+                    renderCalendar();
+                } else {
+                    alert('Błąd zapisu: ' + (result.error || 'Nieznany błąd'));
+                }
+            } catch (error) {
+                alert('Wystąpił błąd sieci.');
+            } finally {
+                saveBtn.disabled = false;
+            }
+        });
+
+        cancelBtn.addEventListener('click', closeModal);
+        modalOverlay.addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
+
+        recurrenceSelect.addEventListener('change', () => {
+            intervalGroup.style.display = (recurrenceSelect.value === 'every_x_days') ? 'block' : 'none';
+        });
+
+        // --- NAWIGACJA ---
+        prevMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); renderCalendar(); });
+        nextMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); renderCalendar(); });
+
+
+        deleteBtn.addEventListener('click', async () => {
+            const uid = uidInput.value;
+            const isRecurring = isRecurringInput.value === 'true';
+            const originalStart = document.getElementById('event-original-start')?.value;
+
+            if (!uid) {
+                alert('Brak UID wydarzenia do usunięcia.');
+                return;
+            }
+
+            let deleteChoice = 'single'; // Domyślnie usuwamy cały plik/serię
+
+            // Jeśli to wystąpienie z cyklu, zapytaj użytkownika co zrobić
+            if (isRecurring && originalStart) {
+                const userChoice = prompt("To jest wydarzenie cykliczne. Co chcesz usunąć?\n\nWpisz 'to' - aby usunąć tylko to wystąpienie.\nWpisz 'wszystkie' - aby usunąć całą serię.", "to");
+                if (userChoice === null) { // Użytkownik kliknął Anuluj
+                    return;
+                }
+                if (userChoice.toLowerCase() === 'wszystkie') {
+                    deleteChoice = 'all';
+                } else {
+                    deleteChoice = 'instance';
+                }
+            }
+
+            const dataToSend = {
+                uid: uid,
+                scope: deleteChoice, // 'single', 'all', lub 'instance'
+                originalStart: originalStart
+            };
+
+            if (!confirm('Czy na pewno chcesz usunąć to wydarzenie?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('api_delete_event.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dataToSend)
+                });
+                const result = await response.json();
+                if (result.success) {
+                    closeModal();
+                    renderCalendar(); // Odśwież widok
+                } else {
+                    alert('Błąd podczas usuwania: ' + (result.error || 'Nieznany błąd'));
+                }
+            } catch (error) {
+                alert('Wystąpił błąd sieci podczas usuwania.');
+            }
+        });
+
+        // --- PIERWSZE URUCHOMIENIE ---
+        renderCalendar();
+    });
+</script>
+</body>
+</html>
