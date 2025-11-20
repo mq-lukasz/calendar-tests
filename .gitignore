@@ -2,3 +2,5 @@
 /public/vendor
 .idea
 .git
+/tillio-calendar.json
+/public/tillio-calendar.json

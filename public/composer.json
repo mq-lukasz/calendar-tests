@@ -1,5 +1,7 @@
 {
     "require": {
-        "sabre/dav": "^4.7"
+        "sabre/dav": "^4.7",
+        "google/apiclient": "*",
+        "google/apiclient-services": "^0.420.1"
     }
 }
